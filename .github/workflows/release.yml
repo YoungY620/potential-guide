@@ -44,6 +44,28 @@ jobs:
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: AI Defense RTS ${{ github.ref_name }}
+          body: |
+            原创离线桌面单人 RTS：指挥防御型 AI 机体「守望机群」，抵御「自适应入侵体」。
+            完全离线、一键启动、无需任何开发环境。
+
+            ## 安装与启动
+
+            **macOS（Apple Silicon）**：下载 `AI Defense RTS-macOS-arm64.zip`，解压后双击 `AI Defense RTS.app`。
+            首次打开如被 Gatekeeper 拦截：右键 → 打开，或「系统设置 → 隐私与安全性」中允许。
+
+            **Windows（x64）**：下载 `AI Defense RTS-windows-x64.zip`，解压后双击 `AI Defense RTS.exe`。
+            如遇到 SmartScreen：「更多信息」→「仍要运行」。
+
+            ## 校验
+
+            每个 zip 附带 `.sha256` 校验文件：`shasum -a 256 -c "AI Defense RTS-<平台>.zip.sha256"`。
+
+            ## 说明
+
+            - 完全离线运行，无端口、无服务器、无遥测
+            - 教学 + 完整对局（10–15 分钟）；设置与快捷键改绑重启后保留
+            - 源码、设计与 QA 报告见仓库 README 与 `docs/`
           files: |
             release/AI Defense RTS-macOS-arm64.zip
             release/AI Defense RTS-macOS-arm64.zip.sha256
@@ -75,6 +97,28 @@ jobs:
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: AI Defense RTS ${{ github.ref_name }}
+          body: |
+            原创离线桌面单人 RTS：指挥防御型 AI 机体「守望机群」，抵御「自适应入侵体」。
+            完全离线、一键启动、无需任何开发环境。
+
+            ## 安装与启动
+
+            **macOS（Apple Silicon）**：下载 `AI Defense RTS-macOS-arm64.zip`，解压后双击 `AI Defense RTS.app`。
+            首次打开如被 Gatekeeper 拦截：右键 → 打开，或「系统设置 → 隐私与安全性」中允许。
+
+            **Windows（x64）**：下载 `AI Defense RTS-windows-x64.zip`，解压后双击 `AI Defense RTS.exe`。
+            如遇到 SmartScreen：「更多信息」→「仍要运行」。
+
+            ## 校验
+
+            每个 zip 附带 `.sha256` 校验文件：`shasum -a 256 -c "AI Defense RTS-<平台>.zip.sha256"`。
+
+            ## 说明
+
+            - 完全离线运行，无端口、无服务器、无遥测
+            - 教学 + 完整对局（10–15 分钟）；设置与快捷键改绑重启后保留
+            - 源码、设计与 QA 报告见仓库 README 与 `docs/`
           files: |
             release/AI Defense RTS-windows-x64.zip
             release/AI Defense RTS-windows-x64.zip.sha256
