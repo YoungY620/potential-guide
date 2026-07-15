@@ -53,8 +53,22 @@ npm test           # 自动化测试（vitest）
 npm run typecheck  # 类型检查
 npm run build      # 构建 renderer + electron 主进程
 npm run dist       # 打包 release/mac-arm64/AI Defense RTS.app
+npm run bake:materials  # 重新生成材质文件 public/assets/materials/*.png
 node --expose-gc scripts/bench.mjs   # 性能与内存基准
 ```
+
+## 发版（CI）
+
+推送版本 tag 即可自动发版（`.github/workflows/release.yml`）：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+工作流会先跑类型检查与全部测试，然后在 macOS（arm64）与 Windows 双平台打包，把
+`AI Defense RTS-macOS-arm64.zip` 与 `AI Defense RTS-windows-x64.zip`（含 SHA256 校验文件）
+发布到对应的 GitHub Release。
 
 ## 目录结构
 

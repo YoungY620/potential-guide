@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  release-mac:
+    needs: test
+    runs-on: macos-14 # Apple Silicon (arm64)
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build and package
+        run: npm run dist
+      - name: Zip app
+        run: |
+          cd release
+          ditto -c -k --keepParent "mac-arm64/AI Defense RTS.app" "AI Defense RTS-macOS-arm64.zip"
+          shasum -a 256 "AI Defense RTS-macOS-arm64.zip" > "AI Defense RTS-macOS-arm64.zip.sha256"
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/AI Defense RTS-macOS-arm64.zip
+            release/AI Defense RTS-macOS-arm64.zip.sha256
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-win:
+    needs: test
+    runs-on: windows-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Package (dir target)
+        run: npx electron-builder --win
+      - name: Zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "release/win-unpacked" -DestinationPath "release/AI Defense RTS-windows-x64.zip" -Force
+          (Get-FileHash "release/AI Defense RTS-windows-x64.zip" -Algorithm SHA256).Hash | Out-File "release/AI Defense RTS-windows-x64.zip.sha256"
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/AI Defense RTS-windows-x64.zip
+            release/AI Defense RTS-windows-x64.zip.sha256
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
