@@ -62,7 +62,7 @@
 | E4 | 暂停时模拟与计时停止 | PASS | pause 测试：暂停期间 tick 严格不变 |
 | E5 | 100 活动单位 ≥55 FPS | PASS | 成品 app 战斗场景 ~100 单位 120 FPS（combat-1080p.png 顶栏 FPS） |
 | E6 | 200 单位不长期低于 30 FPS | PASS | 成品 app 200 单位混战实测 120 FPS（fps200-1080p.png 顶栏计数；qa-fps200.log） |
-| E7 | 20 分钟无明显内存泄漏/阻断错误 | PASS | 模拟层 24000 tick（=20 分钟）堆增量为负（bench soak）；渲染层 20 分钟实测见 qa-soak20min.log |
+| E7 | 20 分钟无明显内存泄漏/阻断错误 | PASS | 成品 app 实跑 21 分钟（qa-soak20min.log，111 条/10s）：120→118 FPS 稳定，heap 恒定 9.5MB，无错误；对局结束后 tick 正确冻结；模拟层 24000 tick 浸泡堆增量为负（qa-bench.log） |
 
 ## F. 美术与声音
 
