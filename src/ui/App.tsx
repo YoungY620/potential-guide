@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { GameController } from '../game/controller';
+import { initMaterialTextures } from '../render/materials';
 import { Renderer, type InputView } from '../render/renderer';
 import { Minimap } from '../render/minimap';
 import { audio, type SoundId } from '../audio/audio';
@@ -61,9 +62,15 @@ export function App() {
     };
     resize();
     window.addEventListener('resize', resize);
-    rendererRef.current = new Renderer(canvas, controller);
-    rendererRef.current.resize(window.innerWidth, window.innerHeight);
-    minimapRef.current = new Minimap(controller);
+    // Load baked PNG material files first (procedural fallback if absent),
+    // then create the renderer so sprites bake with the final textures.
+    let disposed = false;
+    void initMaterialTextures().then(() => {
+      if (disposed) return;
+      rendererRef.current = new Renderer(canvas, controller);
+      rendererRef.current.resize(window.innerWidth, window.innerHeight);
+      minimapRef.current = new Minimap(controller);
+    });
 
     let raf = 0;
     let lastHud = 0;
@@ -116,6 +123,7 @@ export function App() {
     };
     raf = requestAnimationFrame(loop);
     return () => {
+      disposed = true;
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
     };
@@ -379,6 +387,13 @@ export function App() {
           controller.camera.y = 2900;
           recomputeFog(w);
         });
+      }
+      if (q.includes('zoom')) {
+        controller.camera.zoom = 1.4;
+      }
+      if (q.includes('base')) {
+        controller.camera.x = 528;
+        controller.camera.y = 3536;
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

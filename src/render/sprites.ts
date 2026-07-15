@@ -1,442 +1,728 @@
-// Procedural original vector art for every unit, building and resource node.
-// Two visual languages:
-//  - Warden (秩序机器): angular industrial plating, steel blue + orange, cyan glows.
-//  - Phage (自适应入侵体): semi-organic digital growths, violet + acid green.
-// All drawing happens in local space facing +X; caller applies translate/rotate.
+// Sprite pipeline v2: material-rendered sprites baked offscreen (see materials.ts).
+// Static bodies are baked once; thin dynamic parts (legs, turret heads, rings,
+// smoke, tendrils) are drawn per-frame on top. All original, runtime-generated.
+import {
+  bakeSprite,
+  materialFill,
+  edgeLight,
+  specular,
+  panelSeams,
+  rivets,
+  veins,
+  energyGlow,
+  shadeColor
+} from './materials';
 
 export type AnimState = {
-  time: number; // seconds, global clock
+  time: number;
   moving: boolean;
-  attackFlash: number; // 0..1 muzzle/impact flash
+  attackFlash: number;
   stun?: boolean;
 };
 
-const WARDEN_PLATE = '#7f95b5';
-const WARDEN_DARK = '#2c3a52';
-const WARDEN_LIGHT = '#aebfd9';
-const WARDEN_CYAN = '#3fd2ff';
-const WARDEN_ORANGE = '#ff9c41';
-const PHAGE_CHITIN = '#5c2f7d';
-const PHAGE_DARK = '#3a1b52';
-const PHAGE_ACID = '#9dff3f';
-const PHAGE_MAGENTA = '#ff4dd2';
+const STEEL = '#7f95b5';
+const STEEL_DARK = '#2c3a52';
+const STEEL_LIGHT = '#aebfd9';
+const CYAN = '#3fd2ff';
+const ORANGE = '#ff9c41';
+const CHITIN = '#5c2f7d';
+const CHITIN_DARK = '#3a1b52';
+const ACID = '#9dff3f';
+const MAGENTA = '#ff4dd2';
+const BONE = '#cbb8a0';
+const HEAL = '#5cff9d';
 
-function poly(ctx: CanvasRenderingContext2D, pts: number[][], close = true): void {
+function poly(ctx: CanvasRenderingContext2D, pts: number[][]): void {
   ctx.beginPath();
   ctx.moveTo(pts[0][0], pts[0][1]);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-  if (close) ctx.closePath();
+  ctx.closePath();
 }
 
-function circle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+function circ(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
 }
 
-function glowDot(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, alpha: number): void {
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, color);
-  g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = g;
-  circle(ctx, x, y, r);
-  ctx.fill();
-  ctx.globalAlpha = 1;
+// Bake canvas → world display size (px). Sprite drawn centered at (0,0).
+function blit(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, worldSize: number): void {
+  ctx.drawImage(canvas, -worldSize / 2, -worldSize / 2, worldSize, worldSize);
 }
 
-// ============ UNITS ============
-export function drawUnit(ctx: CanvasRenderingContext2D, defId: string, anim: AnimState): void {
-  switch (defId) {
-    case 'splicer':
-      return drawSplicer(ctx, anim);
-    case 'sentinel':
-      return drawSentinel(ctx, anim);
-    case 'bulwark':
-      return drawBulwark(ctx, anim);
-    case 'arccaster':
-      return drawArccaster(ctx, anim);
-    case 'patchwright':
-      return drawPatchwright(ctx, anim);
-    case 'mite':
-      return drawMite(ctx, anim);
-    case 'spitter':
-      return drawSpitter(ctx, anim);
-    case 'leech':
-      return drawLeech(ctx, anim);
-    case 'carrier':
-      return drawCarrier(ctx, anim);
-    case 'ravager':
-      return drawRavager(ctx, anim);
-    case 'invasion_core':
-      return drawInvasionCore(ctx, anim);
-    default:
-      // unknown: faceted gem fallback (never a plain rectangle)
-      ctx.fillStyle = '#8899aa';
-      poly(ctx, [[10, 0], [0, 8], [-10, 0], [0, -8]]);
-      ctx.fill();
-  }
+// ======================================================================
+// WARDEN UNITS (秩序机器 — metal)
+// ======================================================================
+
+function bakeSplicer(): HTMLCanvasElement {
+  return bakeSprite('splicer', 128, (ctx) => {
+    // chassis
+    poly(ctx, [[13, 0], [7, 9], [-6, 9], [-11, 0], [-6, -9], [7, -9]]);
+    materialFill(ctx, -14, -12, 16, 12, STEEL, 'brushed', 11);
+    edgeLight(ctx, 1.6);
+    panelSeams(ctx, [[-6, -9, -6, 9], [7, -9, 7, 9]]);
+    rivets(ctx, [[-3, -6], [-3, 6], [4, -6], [4, 6]], 1.2);
+    // tool arm socket + arm
+    ctx.fillStyle = shadeColor(STEEL_DARK, 1.3);
+    circ(ctx, 9, 4, 3.2);
+    ctx.fill();
+    ctx.strokeStyle = shadeColor(ORANGE, 0.9);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(9, 4);
+    ctx.lineTo(17, 8);
+    ctx.stroke();
+    energyGlow(ctx, 17, 8, 6, ORANGE, 0.8);
+    // visor
+    ctx.fillStyle = '#0c1622';
+    ctx.fillRect(2, -4, 7, 4);
+    energyGlow(ctx, 5.5, -2, 5, CYAN, 0.9);
+    specular(ctx, -4, -5, 8, 0.35);
+  });
 }
 
-function walkBob(anim: AnimState, amp: number, freq = 10): number {
-  return anim.moving ? Math.sin(anim.time * freq) * amp : 0;
+function bakeSentinel(): HTMLCanvasElement {
+  return bakeSprite('sentinel', 128, (ctx) => {
+    // torso armor
+    poly(ctx, [[11, 0], [7, 10], [-8, 11], [-12, 0], [-8, -11], [7, -10]]);
+    materialFill(ctx, -14, -13, 14, 13, STEEL, 'brushed', 21);
+    edgeLight(ctx, 1.6);
+    panelSeams(ctx, [[-8, -11, -8, 11], [2, -10, 2, 10], [-2, -10, -2, 10]]);
+    rivets(ctx, [[-5, -8], [-5, 8], [5, -7], [5, 7]], 1.3);
+    // shoulder pads
+    poly(ctx, [[-1, 10], [-7, 14], [-10, 9]]);
+    materialFill(ctx, -10, 9, -1, 14, STEEL_LIGHT, 'grain', 22, 0.15);
+    edgeLight(ctx, 1.2);
+    poly(ctx, [[-1, -10], [-7, -14], [-10, -9]]);
+    materialFill(ctx, -10, -14, -1, -9, STEEL_LIGHT, 'grain', 23, 0.15);
+    edgeLight(ctx, 1.2);
+    // rail barrel
+    ctx.fillStyle = shadeColor(STEEL_DARK, 0.9);
+    ctx.fillRect(4, -2.5, 19, 5);
+    ctx.fillStyle = shadeColor(STEEL_DARK, 1.4);
+    ctx.fillRect(4, -3.5, 5, 7);
+    energyGlow(ctx, 15, 0, 7, CYAN, 0.55);
+    ctx.strokeStyle = CYAN;
+    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(22, 0);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // optic
+    energyGlow(ctx, 4, 0, 4.5, CYAN, 0.95);
+    specular(ctx, -3, -6, 9, 0.4);
+  });
 }
 
-function drawSplicer(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  const bob = walkBob(a, 1.5);
-  // legs
-  ctx.strokeStyle = WARDEN_DARK;
-  ctx.lineWidth = 2.5;
-  const legSwing = a.moving ? Math.sin(a.time * 12) * 4 : 0;
-  ctx.beginPath();
-  ctx.moveTo(-2, 4);
-  ctx.lineTo(-6 + legSwing, 10);
-  ctx.moveTo(-2, -4);
-  ctx.lineTo(-6 - legSwing, -10);
-  ctx.stroke();
-  // hex body
-  ctx.fillStyle = WARDEN_PLATE;
-  poly(ctx, [[9, 0], [4, 6], [-4, 6], [-8, 0], [-4, -6], [4, -6]]);
-  ctx.fill();
-  ctx.strokeStyle = WARDEN_DARK;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // tool arm
-  ctx.strokeStyle = WARDEN_ORANGE;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(6, 2 + bob * 0.3);
-  ctx.lineTo(12, 5 + bob * 0.3);
-  ctx.stroke();
-  glowDot(ctx, 12, 5 + bob * 0.3, 4, WARDEN_ORANGE, 0.7);
-  // visor
-  ctx.fillStyle = WARDEN_CYAN;
-  ctx.fillRect(2, -2 + bob * 0.2, 4, 2.5);
-}
-
-function drawSentinel(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  // legs
-  ctx.strokeStyle = WARDEN_DARK;
-  ctx.lineWidth = 3;
-  const sw = a.moving ? Math.sin(a.time * 10) * 5 : 0;
-  ctx.beginPath();
-  ctx.moveTo(-3, 5);
-  ctx.lineTo(-5 + sw, 13);
-  ctx.moveTo(-3, -5);
-  ctx.lineTo(-5 - sw, -13);
-  ctx.stroke();
-  // torso
-  ctx.fillStyle = WARDEN_PLATE;
-  poly(ctx, [[8, 0], [5, 7], [-6, 8], [-9, 0], [-6, -8], [5, -7]]);
-  ctx.fill();
-  ctx.strokeStyle = WARDEN_DARK;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // shoulder pads
-  ctx.fillStyle = WARDEN_LIGHT;
-  poly(ctx, [[-1, 8], [-6, 11], [-8, 7]]);
-  ctx.fill();
-  poly(ctx, [[-1, -8], [-6, -11], [-8, -7]]);
-  ctx.fill();
-  // rail barrel
-  ctx.strokeStyle = WARDEN_DARK;
-  ctx.lineWidth = 3.5;
-  ctx.beginPath();
-  ctx.moveTo(4, 0);
-  ctx.lineTo(17, 0);
-  ctx.stroke();
-  ctx.strokeStyle = WARDEN_CYAN;
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(6, 0);
-  ctx.lineTo(17, 0);
-  ctx.stroke();
-  if (a.attackFlash > 0) glowDot(ctx, 18, 0, 8 * a.attackFlash, WARDEN_CYAN, a.attackFlash);
-  // eye
-  glowDot(ctx, 3, 0, 3, WARDEN_CYAN, 0.9);
-}
-
-function drawBulwark(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  const bob = walkBob(a, 1, 7);
-  // treads
-  ctx.fillStyle = WARDEN_DARK;
-  ctx.fillRect(-14, 8 + bob, 24, 7);
-  ctx.fillRect(-14, -15 - bob, 24, 7);
-  ctx.fillStyle = '#1c2637';
-  for (let i = -12; i < 10; i += 5) {
-    ctx.fillRect(i, 9 + bob, 3, 5);
-    ctx.fillRect(i, -14 - bob, 3, 5);
-  }
-  // hull slab
-  ctx.fillStyle = WARDEN_PLATE;
-  poly(ctx, [[14, 0], [9, 10], [-12, 12], [-16, 0], [-12, -12], [9, -10]]);
-  ctx.fill();
-  ctx.strokeStyle = '#101826';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  // armor layers
-  ctx.fillStyle = WARDEN_LIGHT;
-  poly(ctx, [[10, 0], [6, 6], [-8, 7], [-10, 0], [-8, -7], [6, -6]]);
-  ctx.fill();
-  // ram
-  ctx.fillStyle = WARDEN_ORANGE;
-  poly(ctx, [[20, 0], [12, 5], [12, -5]]);
-  ctx.fill();
-  if (a.attackFlash > 0) glowDot(ctx, 20, 0, 12 * a.attackFlash, WARDEN_ORANGE, a.attackFlash);
-  // core slit
-  ctx.fillStyle = WARDEN_CYAN;
-  ctx.fillRect(-4, -1, 8, 2);
-}
-
-function drawArccaster(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  const hover = Math.sin(a.time * 3) * 1.5;
-  ctx.translate(0, hover);
-  // hover platform
-  ctx.fillStyle = WARDEN_DARK;
-  poly(ctx, [[10, 0], [4, 9], [-8, 9], [-12, 0], [-8, -9], [4, -9]]);
-  ctx.fill();
-  ctx.strokeStyle = WARDEN_PLATE;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // prongs
-  ctx.strokeStyle = WARDEN_PLATE;
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(2, 4);
-  ctx.lineTo(14, 8);
-  ctx.moveTo(2, -4);
-  ctx.lineTo(14, -8);
-  ctx.stroke();
-  // arc coil
-  const pulse = 0.6 + Math.sin(a.time * 6) * 0.3;
-  glowDot(ctx, 8, 0, 7, WARDEN_CYAN, pulse);
-  ctx.strokeStyle = WARDEN_CYAN;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(8, 0, 4.5, 0, Math.PI * 2);
-  ctx.stroke();
-  if (a.attackFlash > 0) {
-    ctx.strokeStyle = `rgba(63, 210, 255, ${a.attackFlash})`;
+function bakeBulwark(): HTMLCanvasElement {
+  return bakeSprite('bulwark', 160, (ctx) => {
+    // hull slabs (three plates)
+    poly(ctx, [[18, 0], [12, 13], [-15, 15], [-20, 0], [-15, -15], [12, -13]]);
+    materialFill(ctx, -22, -17, 20, 17, STEEL, 'brushed', 31);
+    edgeLight(ctx, 2);
+    panelSeams(ctx, [[-15, -15, -15, 15], [-2, -14, -2, 14], [12, -13, 12, 13]]);
+    // inner plate
+    poly(ctx, [[13, 0], [8, 8], [-10, 9], [-13, 0], [-10, -9], [8, -8]]);
+    materialFill(ctx, -13, -10, 13, 10, STEEL_LIGHT, 'grain', 32, 0.14);
+    edgeLight(ctx, 1.4);
+    rivets(ctx, [[-17, -12], [-17, 12], [-6, -13], [-6, 13], [9, -11], [9, 11]], 1.6);
+    // ram
+    poly(ctx, [[26, 0], [15, 7], [15, -7]]);
+    materialFill(ctx, 15, -7, 26, 7, ORANGE, 'brushed', 33, 0.18);
+    edgeLight(ctx, 1.4);
+    // hazard strip on ram
+    ctx.save();
+    ctx.clip();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = '#1a1206';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(14, 8);
-    ctx.lineTo(20 + 6 * a.attackFlash, 0);
-    ctx.lineTo(14, -8);
+    ctx.moveTo(17, -6);
+    ctx.lineTo(22, 5);
+    ctx.moveTo(20, -6);
+    ctx.lineTo(25, 3);
     ctx.stroke();
-  }
+    ctx.restore();
+    // core slit
+    ctx.fillStyle = '#0c1622';
+    ctx.fillRect(-6, -2, 11, 4);
+    energyGlow(ctx, 0, 0, 5.5, CYAN, 0.85);
+    specular(ctx, -6, -8, 10, 0.35);
+  });
 }
 
-function drawPatchwright(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  const bob = walkBob(a, 1.4, 9);
-  // rounded body
-  ctx.fillStyle = WARDEN_PLATE;
-  poly(ctx, [[8, 0], [5, 6], [0, 8], [-7, 5], [-9, 0], [-7, -5], [0, -8], [5, -6]]);
-  ctx.fill();
-  ctx.strokeStyle = WARDEN_DARK;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // nano canister
-  ctx.fillStyle = '#3a5b4f';
-  ctx.fillRect(-6, -3 + bob * 0.2, 5, 6);
-  glowDot(ctx, -3.5, 0, 5, '#5cff9d', 0.6);
-  // repair arm
-  ctx.strokeStyle = WARDEN_LIGHT;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(5, 1);
-  ctx.lineTo(12, 3 + bob * 0.4);
-  ctx.stroke();
-  ctx.strokeStyle = '#5cff9d';
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.moveTo(12, 3 + bob * 0.4);
-  ctx.lineTo(15, 3 + bob * 0.4);
-  ctx.stroke();
-  glowDot(ctx, 15, 3 + bob * 0.4, 3.5, '#5cff9d', 0.8);
-  // eye
-  ctx.fillStyle = WARDEN_CYAN;
-  circle(ctx, 3, -1, 1.6);
-  ctx.fill();
-}
-
-// ---- Phage ----
-function drawMite(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  const wiggle = a.moving ? Math.sin(a.time * 16) * 0.25 : 0;
-  ctx.rotate(wiggle * 0.3);
-  // spikes
-  ctx.fillStyle = PHAGE_DARK;
-  for (let i = 0; i < 5; i++) {
-    const ang = -Math.PI * 0.7 + (i / 4) * Math.PI * 1.4;
-    poly(ctx, [
-      [Math.cos(ang) * 6, Math.sin(ang) * 6],
-      [Math.cos(ang) * 13, Math.sin(ang) * 13],
-      [Math.cos(ang + 0.35) * 6, Math.sin(ang + 0.35) * 6]
-    ]);
-    ctx.fill();
-  }
-  // body blob
-  ctx.fillStyle = PHAGE_CHITIN;
-  circle(ctx, 0, 0, 7);
-  ctx.fill();
-  ctx.strokeStyle = PHAGE_MAGENTA;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  glowDot(ctx, 2, 0, 3, PHAGE_ACID, 0.9);
-}
-
-function drawSpitter(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  const breathe = 1 + Math.sin(a.time * 4) * 0.06;
-  ctx.scale(breathe, breathe);
-  // tail spikes
-  ctx.fillStyle = PHAGE_DARK;
-  poly(ctx, [[-6, 4], [-15, 8], [-7, 0]]);
-  ctx.fill();
-  poly(ctx, [[-6, -4], [-15, -8], [-7, 0]]);
-  ctx.fill();
-  // sac body
-  ctx.fillStyle = PHAGE_CHITIN;
-  circle(ctx, 0, 0, 9);
-  ctx.fill();
-  ctx.strokeStyle = PHAGE_DARK;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // acid sacs
-  glowDot(ctx, -2, 3, 4, PHAGE_ACID, 0.5 + Math.sin(a.time * 5) * 0.2);
-  glowDot(ctx, -3, -4, 3, PHAGE_ACID, 0.4);
-  // spout
-  ctx.fillStyle = PHAGE_MAGENTA;
-  poly(ctx, [[7, 3], [15, 0], [7, -3]]);
-  ctx.fill();
-  if (a.attackFlash > 0) glowDot(ctx, 15, 0, 7 * a.attackFlash, PHAGE_ACID, a.attackFlash);
-}
-
-function drawLeech(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  // segmented body
-  const wob = a.moving ? Math.sin(a.time * 10) : 0;
-  for (let i = 3; i >= 0; i--) {
-    const off = Math.sin(a.time * 10 - i * 0.9) * (a.moving ? 2.5 : 0.6);
-    ctx.fillStyle = i % 2 === 0 ? PHAGE_CHITIN : PHAGE_DARK;
-    circle(ctx, -i * 7, off * (i / 3), 6 - i * 0.7);
-    ctx.fill();
-  }
-  // head mandibles
-  ctx.strokeStyle = PHAGE_ACID;
-  ctx.lineWidth = 1.8;
-  ctx.beginPath();
-  ctx.moveTo(3, 3);
-  ctx.lineTo(11, 7 + wob);
-  ctx.moveTo(3, -3);
-  ctx.lineTo(11, -7 - wob);
-  ctx.stroke();
-  glowDot(ctx, 4, 0, 3, PHAGE_MAGENTA, 0.8);
-}
-
-function drawCarrier(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  const pulse = 1 + Math.sin(a.time * 2.5) * 0.05;
-  ctx.scale(pulse, pulse);
-  // back spikes
-  ctx.fillStyle = PHAGE_DARK;
-  for (let i = 0; i < 6; i++) {
-    const ang = -Math.PI * 0.75 + (i / 5) * Math.PI * 1.5;
-    poly(ctx, [
-      [Math.cos(ang) * 12, Math.sin(ang) * 12],
-      [Math.cos(ang) * 24, Math.sin(ang) * 24],
-      [Math.cos(ang + 0.3) * 12, Math.sin(ang + 0.3) * 12]
-    ]);
-    ctx.fill();
-  }
-  // main sack
-  ctx.fillStyle = PHAGE_CHITIN;
-  circle(ctx, 0, 0, 16);
-  ctx.fill();
-  ctx.strokeStyle = PHAGE_MAGENTA;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // incubation sacs
-  for (let i = 0; i < 3; i++) {
-    const ang = a.time * 0.8 + (i * Math.PI * 2) / 3;
-    glowDot(ctx, Math.cos(ang) * 7, Math.sin(ang) * 7, 4.5, PHAGE_ACID, 0.55);
-  }
-  // maw
-  ctx.fillStyle = PHAGE_DARK;
-  poly(ctx, [[13, 4], [20, 0], [13, -4]]);
-  ctx.fill();
-}
-
-function drawRavager(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  const bob = walkBob(a, 2, 6);
-  // massive claws
-  ctx.fillStyle = PHAGE_DARK;
-  const clawLift = a.attackFlash > 0 ? -6 * a.attackFlash : 0;
-  poly(ctx, [[8, 12], [24, 16 + bob + clawLift], [28, 10 + clawLift], [14, 6]]);
-  ctx.fill();
-  poly(ctx, [[8, -12], [24, -16 - bob - clawLift], [28, -10 - clawLift], [14, -6]]);
-  ctx.fill();
-  // carapace
-  ctx.fillStyle = PHAGE_CHITIN;
-  poly(ctx, [[16, 0], [10, 14], [-8, 18], [-18, 8], [-18, -8], [-8, -18], [10, -14]]);
-  ctx.fill();
-  ctx.strokeStyle = PHAGE_MAGENTA;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  // armor ridges
-  ctx.strokeStyle = PHAGE_DARK;
-  ctx.lineWidth = 2.5;
-  for (let i = -1; i <= 1; i++) {
+function bakeArccaster(): HTMLCanvasElement {
+  return bakeSprite('arccaster', 128, (ctx) => {
+    // hover platform
+    poly(ctx, [[13, 0], [6, 11], [-10, 11], [-15, 0], [-10, -11], [6, -11]]);
+    materialFill(ctx, -16, -13, 15, 13, STEEL_DARK, 'brushed', 41);
+    edgeLight(ctx, 1.6);
+    panelSeams(ctx, [[-10, -11, -10, 11], [6, -11, 6, 11]]);
+    rivets(ctx, [[-7, -8], [-7, 8], [2, -9], [2, 9]], 1.2);
+    // prongs
+    ctx.strokeStyle = shadeColor(STEEL, 1.1);
+    ctx.lineWidth = 3.5;
     ctx.beginPath();
-    ctx.moveTo(-10 + i * 6, -12);
-    ctx.lineTo(-6 + i * 6, 12);
+    ctx.moveTo(3, 5);
+    ctx.lineTo(18, 10);
+    ctx.moveTo(3, -5);
+    ctx.lineTo(18, -10);
     ctx.stroke();
-  }
-  glowDot(ctx, 8, 0, 5, PHAGE_ACID, 0.7 + Math.sin(a.time * 3) * 0.2);
-  if (a.attackFlash > 0) glowDot(ctx, 26, 0, 16 * a.attackFlash, PHAGE_MAGENTA, a.attackFlash * 0.7);
-}
-
-function drawInvasionCore(ctx: CanvasRenderingContext2D, a: AnimState): void {
-  const t = a.time;
-  // outer ring (rotating)
-  ctx.save();
-  ctx.rotate(t * 0.5);
-  ctx.strokeStyle = PHAGE_MAGENTA;
-  ctx.lineWidth = 3;
-  ctx.setLineDash([14, 8]);
-  ctx.beginPath();
-  ctx.arc(0, 0, 36, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-  // spikes
-  ctx.fillStyle = PHAGE_DARK;
-  for (let i = 0; i < 8; i++) {
-    const ang = (i / 8) * Math.PI * 2 + t * 0.2;
-    poly(ctx, [
-      [Math.cos(ang) * 22, Math.sin(ang) * 22],
-      [Math.cos(ang) * 40, Math.sin(ang) * 40],
-      [Math.cos(ang + 0.25) * 22, Math.sin(ang + 0.25) * 22]
-    ]);
+    ctx.strokeStyle = shadeColor(STEEL_DARK, 0.8);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(5, 5);
+    ctx.lineTo(18, 10);
+    ctx.moveTo(5, -5);
+    ctx.lineTo(18, -10);
+    ctx.stroke();
+    // arc coil
+    circ(ctx, 10, 0, 6.5);
+    ctx.fillStyle = '#0c1622';
     ctx.fill();
-  }
-  // body
-  ctx.fillStyle = PHAGE_CHITIN;
-  circle(ctx, 0, 0, 26);
-  ctx.fill();
-  ctx.strokeStyle = PHAGE_MAGENTA;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  // inner counter-rotating ring
-  ctx.save();
-  ctx.rotate(-t * 0.9);
-  ctx.strokeStyle = PHAGE_ACID;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([6, 6]);
-  ctx.beginPath();
-  ctx.arc(0, 0, 16, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-  glowDot(ctx, 0, 0, 12, PHAGE_ACID, 0.6 + Math.sin(t * 4) * 0.3);
+    energyGlow(ctx, 10, 0, 10, CYAN, 0.9);
+    specular(ctx, -4, -6, 9, 0.3);
+  });
 }
 
-// ============ BUILDINGS ============
+function bakePatchwright(): HTMLCanvasElement {
+  return bakeSprite('patchwright', 128, (ctx) => {
+    poly(ctx, [[10, 0], [7, 8], [0, 10], [-9, 7], [-12, 0], [-9, -7], [0, -10], [7, -8]]);
+    materialFill(ctx, -13, -11, 12, 11, STEEL, 'grain', 51, 0.18);
+    edgeLight(ctx, 1.6);
+    panelSeams(ctx, [[-9, -7, -9, 7], [7, -8, 7, 8]]);
+    // nano canister (glass)
+    const g = ctx.createLinearGradient(-8, -5, -1, 5);
+    g.addColorStop(0, '#7fd6a8');
+    g.addColorStop(0.5, '#2c5b44');
+    g.addColorStop(1, '#14271e');
+    ctx.fillStyle = g;
+    ctx.fillRect(-8, -5, 7, 10);
+    ctx.strokeStyle = shadeColor(STEEL_DARK, 1.2);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-8, -5, 7, 10);
+    specular(ctx, -6.5, -2.5, 4, 0.7);
+    energyGlow(ctx, -4.5, 0, 7, HEAL, 0.5);
+    // repair arm
+    ctx.strokeStyle = shadeColor(STEEL_LIGHT, 1);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(7, 2);
+    ctx.lineTo(15, 5);
+    ctx.stroke();
+    energyGlow(ctx, 15, 5, 5, HEAL, 0.9);
+    // optic
+    energyGlow(ctx, 4, -2, 3, CYAN, 0.9);
+    specular(ctx, -2, -6, 8, 0.35);
+  });
+}
+
+// ======================================================================
+// PHAGE UNITS (自适应入侵体 — chitin / flesh)
+// ======================================================================
+
+function bakeMite(): HTMLCanvasElement {
+  return bakeSprite('mite', 96, (ctx) => {
+    // spikes (bone)
+    for (let i = 0; i < 5; i++) {
+      const ang = -Math.PI * 0.7 + (i / 4) * Math.PI * 1.4;
+      poly(ctx, [
+        [Math.cos(ang) * 7, Math.sin(ang) * 7],
+        [Math.cos(ang) * 15, Math.sin(ang) * 15],
+        [Math.cos(ang + 0.35) * 7, Math.sin(ang + 0.35) * 7]
+      ]);
+      materialFill(ctx, Math.cos(ang) * 15 - 3, Math.sin(ang) * 15 - 3, Math.cos(ang) * 15 + 3, Math.sin(ang) * 15 + 3, BONE, 'grain', 61 + i, 0.15);
+      edgeLight(ctx, 1);
+    }
+    // body
+    circ(ctx, 0, 0, 8.5);
+    materialFill(ctx, -8, -8, 8, 8, CHITIN, 'chitin', 66);
+    edgeLight(ctx, 1.4);
+    veins(ctx, 67, 0, 0, 7, 4, MAGENTA);
+    energyGlow(ctx, 3, 0, 4, ACID, 0.95);
+    specular(ctx, -3, -4, 6, 0.4);
+  });
+}
+
+function bakeSpitter(): HTMLCanvasElement {
+  return bakeSprite('spitter', 112, (ctx) => {
+    // tail spikes
+    poly(ctx, [[-7, 5], [-18, 10], [-8, 0]]);
+    materialFill(ctx, -18, 0, -7, 10, BONE, 'grain', 71, 0.15);
+    edgeLight(ctx, 1);
+    poly(ctx, [[-7, -5], [-18, -10], [-8, 0]]);
+    materialFill(ctx, -18, -10, -7, 0, BONE, 'grain', 72, 0.15);
+    edgeLight(ctx, 1);
+    // sac body
+    circ(ctx, 0, 0, 11);
+    materialFill(ctx, -11, -11, 11, 11, CHITIN, 'flesh', 73);
+    edgeLight(ctx, 1.5);
+    veins(ctx, 74, -1, 0, 9, 5, MAGENTA);
+    // acid sacs
+    circ(ctx, -3, 4, 3.4);
+    materialFill(ctx, -6, 1, 0, 7, ACID, 'flesh', 75, 0.2);
+    energyGlow(ctx, -3, 4, 5.5, ACID, 0.6);
+    circ(ctx, -4, -5, 2.6);
+    materialFill(ctx, -7, -8, -1, -2, ACID, 'flesh', 76, 0.2);
+    energyGlow(ctx, -4, -5, 4.5, ACID, 0.5);
+    // spout
+    poly(ctx, [[9, 4], [19, 0], [9, -4]]);
+    materialFill(ctx, 9, -4, 19, 4, MAGENTA, 'flesh', 77);
+    edgeLight(ctx, 1.2);
+    specular(ctx, -4, -5, 8, 0.35);
+  });
+}
+
+function bakeLeech(): HTMLCanvasElement {
+  return bakeSprite('leech', 128, (ctx) => {
+    // segments (back to front)
+    for (let i = 3; i >= 0; i--) {
+      const x = -i * 8.5;
+      const r = 7 - i * 0.8;
+      circ(ctx, x, 0, r);
+      materialFill(ctx, x - r, -r, x + r, r, i % 2 === 0 ? CHITIN : CHITIN_DARK, 'chitin', 81 + i);
+      edgeLight(ctx, 1.2);
+    }
+    // head mandibles (bone)
+    ctx.strokeStyle = shadeColor(BONE, 1.1);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(4, 4);
+    ctx.lineTo(14, 9);
+    ctx.moveTo(4, -4);
+    ctx.lineTo(14, -9);
+    ctx.stroke();
+    energyGlow(ctx, 5, 0, 4, MAGENTA, 0.85);
+    specular(ctx, -8, -4, 7, 0.3);
+  });
+}
+
+function bakeCarrier(): HTMLCanvasElement {
+  return bakeSprite('carrier', 160, (ctx) => {
+    // back spikes
+    for (let i = 0; i < 6; i++) {
+      const ang = -Math.PI * 0.75 + (i / 5) * Math.PI * 1.5;
+      poly(ctx, [
+        [Math.cos(ang) * 14, Math.sin(ang) * 14],
+        [Math.cos(ang) * 28, Math.sin(ang) * 28],
+        [Math.cos(ang + 0.3) * 14, Math.sin(ang + 0.3) * 14]
+      ]);
+      materialFill(ctx, Math.cos(ang) * 28 - 4, Math.sin(ang) * 28 - 4, Math.cos(ang) * 28 + 4, Math.sin(ang) * 28 + 4, BONE, 'grain', 91 + i, 0.14);
+      edgeLight(ctx, 1.2);
+    }
+    // main sack
+    circ(ctx, 0, 0, 19);
+    materialFill(ctx, -19, -19, 19, 19, CHITIN, 'flesh', 96);
+    edgeLight(ctx, 2);
+    veins(ctx, 97, 0, 0, 15, 8, MAGENTA);
+    // incubation sacs
+    for (let i = 0; i < 3; i++) {
+      const ang = (i * Math.PI * 2) / 3 + 0.5;
+      const x = Math.cos(ang) * 8;
+      const y = Math.sin(ang) * 8;
+      circ(ctx, x, y, 4.5);
+      materialFill(ctx, x - 4, y - 4, x + 4, y + 4, ACID, 'flesh', 98 + i, 0.2);
+      energyGlow(ctx, x, y, 6.5, ACID, 0.5);
+    }
+    // maw
+    poly(ctx, [[16, 5], [25, 0], [16, -5]]);
+    materialFill(ctx, 16, -5, 25, 5, CHITIN_DARK, 'flesh', 99);
+    edgeLight(ctx, 1.2);
+    specular(ctx, -6, -8, 11, 0.35);
+  });
+}
+
+function bakeRavager(): HTMLCanvasElement {
+  return bakeSprite('ravager', 192, (ctx) => {
+    // claws (bone, big)
+    poly(ctx, [[10, 15], [30, 20], [35, 12], [18, 8]]);
+    materialFill(ctx, 10, 8, 35, 20, BONE, 'chitin', 101);
+    edgeLight(ctx, 1.6);
+    poly(ctx, [[10, -15], [30, -20], [35, -12], [18, -8]]);
+    materialFill(ctx, 10, -20, 35, -8, BONE, 'chitin', 102);
+    edgeLight(ctx, 1.6);
+    // carapace
+    poly(ctx, [[20, 0], [13, 17], [-10, 22], [-22, 10], [-22, -10], [-10, -22], [13, -17]]);
+    materialFill(ctx, -24, -24, 22, 24, CHITIN, 'chitin', 103);
+    edgeLight(ctx, 2.2);
+    // armor ridges
+    panelSeams(ctx, [
+      [-14, -15, -10, 15],
+      [-6, -19, -2, 19],
+      [2, -17, 6, 17]
+    ], 2.2);
+    veins(ctx, 104, -4, 0, 18, 7, MAGENTA);
+    energyGlow(ctx, 10, 0, 6.5, ACID, 0.8);
+    specular(ctx, -8, -12, 13, 0.35);
+  });
+}
+
+function bakeInvasionCore(): HTMLCanvasElement {
+  return bakeSprite('invasion_core', 256, (ctx) => {
+    // spikes (8, bone-chitin)
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2;
+      poly(ctx, [
+        [Math.cos(ang) * 26, Math.sin(ang) * 26],
+        [Math.cos(ang) * 46, Math.sin(ang) * 46],
+        [Math.cos(ang + 0.25) * 26, Math.sin(ang + 0.25) * 26]
+      ]);
+      materialFill(ctx, Math.cos(ang) * 46 - 6, Math.sin(ang) * 46 - 6, Math.cos(ang) * 46 + 6, Math.sin(ang) * 46 + 6, CHITIN_DARK, 'chitin', 111 + i);
+      edgeLight(ctx, 1.5);
+    }
+    // body sphere
+    circ(ctx, 0, 0, 30);
+    materialFill(ctx, -30, -30, 30, 30, CHITIN, 'flesh', 120);
+    edgeLight(ctx, 2.5);
+    veins(ctx, 121, 0, 0, 24, 10, MAGENTA);
+    // core
+    circ(ctx, 0, 0, 13);
+    ctx.fillStyle = '#0e2404';
+    ctx.fill();
+    energyGlow(ctx, 0, 0, 22, ACID, 1);
+    specular(ctx, -8, -10, 14, 0.4);
+  });
+}
+
+// ======================================================================
+// BUILDINGS
+// ======================================================================
+
+function bakeCitadel(): HTMLCanvasElement {
+  return bakeSprite('citadel', 384, (ctx) => {
+    // hex foundation
+    poly(ctx, [[88, 0], [44, 76], [-44, 76], [-88, 0], [-44, -76], [44, -76]]);
+    materialFill(ctx, -90, -78, 90, 78, STEEL_DARK, 'brushed', 201);
+    edgeLight(ctx, 3);
+    panelSeams(ctx, [[-44, -76, -44, 76], [44, -76, 44, 76], [-88, 0, 88, 0]], 2);
+    rivets(ctx, [[-70, -20], [-70, 20], [70, -20], [70, 20], [0, -70], [0, 70]], 2.4);
+    // server towers
+    const towers: [number, number, number][] = [[-32, -22, 44], [7, -32, 56], [28, 15, 36]];
+    for (const [x, y, h] of towers) {
+      ctx.fillStyle = shadeColor(STEEL_DARK, 0.7);
+      ctx.fillRect(x - 13, y - h / 2 + 4, 26, h);
+      poly(ctx, [[x - 13, y - h / 2 + 4], [x + 13, y - h / 2 + 4], [x + 13, y + h / 2 + 4], [x - 13, y + h / 2 + 4]]);
+      materialFill(ctx, x - 13, y - h / 2, x + 13, y + h / 2 + 4, STEEL, 'brushed', 202 + x);
+      edgeLight(ctx, 1.6);
+      // vents
+      ctx.fillStyle = '#101826';
+      for (let i = 0; i < 3; i++) ctx.fillRect(x - 9, y - h / 2 + 8 + i * 10, 18, 4);
+      energyGlow(ctx, x, y - h / 2 - 2, 6, CYAN, 0.6);
+    }
+    // central core housing
+    poly(ctx, [[18, 10], [9, 26], [-9, 26], [-18, 10], [-9, -6], [9, -6]]);
+    materialFill(ctx, -18, -8, 18, 26, STEEL_LIGHT, 'grain', 210, 0.16);
+    edgeLight(ctx, 1.8);
+    energyGlow(ctx, 0, 10, 22, CYAN, 0.55);
+    // antenna
+    ctx.strokeStyle = shadeColor(ORANGE, 1);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(38, -38);
+    ctx.lineTo(48, -66);
+    ctx.stroke();
+    energyGlow(ctx, 48, -66, 7, ORANGE, 0.8);
+  });
+}
+
+function bakeFabricator(): HTMLCanvasElement {
+  return bakeSprite('fabricator', 320, (ctx) => {
+    // main body
+    poly(ctx, [[70, 25], [70, -25], [25, -42], [-70, -42], [-70, 42], [25, 42]]);
+    materialFill(ctx, -72, -44, 72, 44, STEEL_DARK, 'brushed', 221);
+    edgeLight(ctx, 2.5);
+    // roof plating
+    poly(ctx, [[62, 20], [62, -20], [22, -35], [-62, -35], [-62, 35], [22, 35]]);
+    materialFill(ctx, -64, -36, 64, 36, STEEL, 'brushed', 222);
+    edgeLight(ctx, 2);
+    panelSeams(ctx, [[-30, -35, -30, 35], [10, -35, 10, 35], [-62, 0, 62, 0]], 1.8);
+    rivets(ctx, [[-55, -28], [-55, 28], [55, -15], [55, 15], [-15, -30], [-15, 30]], 2);
+    // chimney
+    poly(ctx, [[-58, -30], [-42, -30], [-42, -58], [-58, -58]]);
+    materialFill(ctx, -58, -58, -42, -30, STEEL_DARK, 'brushed', 223);
+    edgeLight(ctx, 1.5);
+    // conveyor door
+    ctx.fillStyle = '#0c1420';
+    ctx.fillRect(34, -15, 26, 30);
+    ctx.strokeStyle = ORANGE;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(34, -15, 26, 30);
+    ctx.strokeStyle = 'rgba(255,156,65,0.4)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(34, -15 + i * 7.5);
+      ctx.lineTo(60, -15 + i * 7.5);
+      ctx.stroke();
+    }
+    energyGlow(ctx, -10, 0, 16, CYAN, 0.3);
+  });
+}
+
+function bakeUplink(): HTMLCanvasElement {
+  return bakeSprite('uplink', 256, (ctx) => {
+    // base pad
+    poly(ctx, [[50, 0], [25, 43], [-25, 43], [-50, 0], [-25, -43], [25, -43]]);
+    materialFill(ctx, -52, -45, 52, 45, STEEL_DARK, 'brushed', 231);
+    edgeLight(ctx, 2.2);
+    rivets(ctx, [[-30, -20], [30, -20], [-30, 20], [30, 20]], 2);
+    // mast
+    poly(ctx, [[8, 0], [4, -44], [-4, -44], [-8, 0]]);
+    materialFill(ctx, -9, -45, 9, 0, STEEL, 'brushed', 232);
+    edgeLight(ctx, 1.6);
+    // side fins
+    poly(ctx, [[13, 13], [30, 25], [13, 28]]);
+    materialFill(ctx, 13, 13, 30, 28, ORANGE, 'brushed', 233, 0.16);
+    edgeLight(ctx, 1.2);
+    poly(ctx, [[-13, 13], [-30, 25], [-13, 28]]);
+    materialFill(ctx, -30, 13, -13, 28, ORANGE, 'brushed', 234, 0.16);
+    edgeLight(ctx, 1.2);
+    energyGlow(ctx, 0, -46, 9, CYAN, 0.9);
+  });
+}
+
+function bakeCapacitor(): HTMLCanvasElement {
+  return bakeSprite('capacitor', 192, (ctx) => {
+    // pylon base
+    poly(ctx, [[33, 0], [16, 28], [-16, 28], [-33, 0], [-16, -28], [16, -28]]);
+    materialFill(ctx, -35, -30, 35, 30, STEEL_DARK, 'brushed', 241);
+    edgeLight(ctx, 2);
+    rivets(ctx, [[-20, -12], [20, -12], [-20, 12], [20, 12]], 1.6);
+    // crystal
+    poly(ctx, [[0, -26], [11, -5], [6, 15], [-6, 15], [-11, -5]]);
+    materialFill(ctx, -12, -27, 12, 15, STEEL_LIGHT, 'crystal', 242, 0.3);
+    edgeLight(ctx, 1.5);
+    energyGlow(ctx, 0, -6, 20, CYAN, 0.6);
+    // ring
+    ctx.strokeStyle = shadeColor(ORANGE, 1);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 18, 20, 6.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+}
+
+function bakeTurretBase(): HTMLCanvasElement {
+  return bakeSprite('turret_base', 192, (ctx) => {
+    poly(ctx, [[35, 0], [17, 30], [-17, 30], [-35, 0], [-17, -30], [17, -30]]);
+    materialFill(ctx, -37, -32, 37, 32, STEEL_DARK, 'brushed', 251);
+    edgeLight(ctx, 2.2);
+    rivets(ctx, [[-22, -14], [22, -14], [-22, 14], [22, 14], [0, -26], [0, 26]], 1.8);
+    panelSeams(ctx, [[-17, -30, 17, 30]], 1.5);
+  });
+}
+
+function bakeTurretHead(): HTMLCanvasElement {
+  return bakeSprite('turret_head', 128, (ctx) => {
+    circ(ctx, 0, 0, 14);
+    materialFill(ctx, -14, -14, 14, 14, STEEL, 'brushed', 252);
+    edgeLight(ctx, 1.6);
+    // twin barrels
+    ctx.fillStyle = shadeColor(STEEL_DARK, 0.85);
+    ctx.fillRect(6, -7, 22, 5);
+    ctx.fillRect(6, 2, 22, 5);
+    ctx.fillStyle = shadeColor(STEEL_DARK, 1.3);
+    ctx.fillRect(24, -7.5, 5, 6);
+    ctx.fillRect(24, 1.5, 5, 6);
+    energyGlow(ctx, 0, 0, 7, ORANGE, 0.65);
+    specular(ctx, -4, -6, 8, 0.4);
+  });
+}
+
+function bakeSpawner(): HTMLCanvasElement {
+  return bakeSprite('spawner', 384, (ctx) => {
+    // mound
+    circ(ctx, 0, 0, 58);
+    materialFill(ctx, -58, -58, 58, 58, CHITIN, 'flesh', 261);
+    edgeLight(ctx, 3);
+    veins(ctx, 262, 0, 0, 46, 12, MAGENTA);
+    // orifices
+    for (let i = 0; i < 5; i++) {
+      const ang = (i / 5) * Math.PI * 2 + 0.4;
+      const x = Math.cos(ang) * 32;
+      const y = Math.sin(ang) * 32;
+      circ(ctx, x, y, 10);
+      ctx.fillStyle = '#160a24';
+      ctx.fill();
+      edgeLight(ctx, 1.4);
+      energyGlow(ctx, x, y, 11, ACID, 0.4);
+    }
+    energyGlow(ctx, 0, 0, 26, MAGENTA, 0.45);
+    specular(ctx, -15, -18, 22, 0.3);
+  });
+}
+
+// ======================================================================
+// RESOURCE NODES & PROJECTILES
+// ======================================================================
+
+function drawShardNode(ctx: CanvasRenderingContext2D, frac: number, t: number): void {
+  const shards: [number, number, number, number][] = [
+    [0, 0, 14, 1],
+    [-12, 8, 9, 0.7],
+    [11, 9, 8, 0.5]
+  ];
+  for (const [x, y, h, s] of shards) {
+    const hh = h * (0.5 + frac * 0.5);
+    poly(ctx, [[x, y - hh * s * 2], [x + 7 * s, y], [x, y + 6 * s], [x - 7 * s, y]]);
+    materialFill(ctx, x - 7 * s, y - hh * s * 2, x + 7 * s, y + 6 * s, '#2b7ea6', 'crystal', 300 + x, 0.35);
+    edgeLight(ctx, 1.2);
+  }
+  energyGlow(ctx, 0, 0, 18, CYAN, 0.3 + Math.sin(t * 2) * 0.1 + frac * 0.15);
+}
+
+function drawFluxNode(ctx: CanvasRenderingContext2D, frac: number, t: number): void {
+  poly(ctx, [[15, 5], [8, 13], [-8, 13], [-15, 5], [-8, -3], [8, -3]]);
+  materialFill(ctx, -16, -4, 16, 14, '#5a4228', 'grain', 310);
+  edgeLight(ctx, 1.5);
+  const jet = 0.45 + Math.sin(t * 5) * 0.2 + frac * 0.3;
+  ctx.strokeStyle = `rgba(255, 156, 65, ${Math.min(1, jet + 0.2)})`;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -2);
+  ctx.lineTo(Math.sin(t * 7) * 3.5, -20 - frac * 8);
+  ctx.stroke();
+  energyGlow(ctx, 0, -8, 20, ORANGE, jet);
+}
+
+// ======================================================================
+// PUBLIC DRAW API (called by renderer each frame)
+// ======================================================================
+
+const UNIT_WORLD: Record<string, number> = {
+  splicer: 34,
+  sentinel: 40,
+  bulwark: 56,
+  arccaster: 42,
+  patchwright: 36,
+  mite: 30,
+  spitter: 38,
+  leech: 44,
+  carrier: 60,
+  ravager: 76,
+  invasion_core: 120
+};
+
+export function drawUnit(ctx: CanvasRenderingContext2D, defId: string, anim: AnimState): void {
+  const size = UNIT_WORLD[defId] ?? 40;
+  const moving = anim.moving;
+  switch (defId) {
+    case 'splicer': {
+      // legs (dynamic)
+      const sw = moving ? Math.sin(anim.time * 12) * 5 : 0;
+      ctx.strokeStyle = shadeColor(STEEL_DARK, 0.9);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-3, 5);
+      ctx.lineTo(-8 + sw, 13);
+      ctx.moveTo(-3, -5);
+      ctx.lineTo(-8 - sw, -13);
+      ctx.stroke();
+      blit(ctx, bakeSplicer(), size);
+      break;
+    }
+    case 'sentinel': {
+      const sw = moving ? Math.sin(anim.time * 10) * 6 : 0;
+      ctx.strokeStyle = shadeColor(STEEL_DARK, 0.9);
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(-4, 6);
+      ctx.lineTo(-7 + sw, 17);
+      ctx.moveTo(-4, -6);
+      ctx.lineTo(-7 - sw, -17);
+      ctx.stroke();
+      blit(ctx, bakeSentinel(), size);
+      break;
+    }
+    case 'bulwark': {
+      // treads (dynamic)
+      const off = moving ? (anim.time * 30) % 6 : 0;
+      ctx.fillStyle = '#141c2c';
+      ctx.fillRect(-22, 12, 40, 10);
+      ctx.fillRect(-22, -22, 40, 10);
+      ctx.fillStyle = '#2a3854';
+      for (let i = -22; i < 18; i += 6) {
+        ctx.fillRect(i + off, 13.5, 3.5, 7);
+        ctx.fillRect(i + off, -20.5, 3.5, 7);
+      }
+      blit(ctx, bakeBulwark(), size);
+      break;
+    }
+    case 'arccaster': {
+      ctx.translate(0, Math.sin(anim.time * 3) * 2);
+      blit(ctx, bakeArccaster(), size);
+      break;
+    }
+    case 'patchwright':
+      blit(ctx, bakePatchwright(), size);
+      break;
+    case 'mite':
+      ctx.rotate(moving ? Math.sin(anim.time * 16) * 0.12 : 0);
+      blit(ctx, bakeMite(), size);
+      break;
+    case 'spitter': {
+      const b = 1 + Math.sin(anim.time * 4) * 0.05;
+      ctx.scale(b, b);
+      blit(ctx, bakeSpitter(), size);
+      break;
+    }
+    case 'leech': {
+      if (moving) ctx.rotate(Math.sin(anim.time * 10) * 0.1);
+      blit(ctx, bakeLeech(), size);
+      break;
+    }
+    case 'carrier': {
+      const p = 1 + Math.sin(anim.time * 2.5) * 0.04;
+      ctx.scale(p, p);
+      blit(ctx, bakeCarrier(), size);
+      break;
+    }
+    case 'ravager':
+      blit(ctx, bakeRavager(), size);
+      break;
+    case 'invasion_core': {
+      // rotating outer ring (dynamic)
+      ctx.save();
+      ctx.rotate(anim.time * 0.5);
+      ctx.strokeStyle = MAGENTA;
+      ctx.lineWidth = 3.5;
+      ctx.setLineDash([16, 9]);
+      ctx.beginPath();
+      ctx.arc(0, 0, 44, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      blit(ctx, bakeInvasionCore(), size);
+      ctx.save();
+      ctx.rotate(-anim.time * 0.9);
+      ctx.strokeStyle = ACID;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 7]);
+      ctx.beginPath();
+      ctx.arc(0, 0, 20, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+      break;
+    }
+    default:
+      blit(ctx, bakeSplicer(), size);
+  }
+  if (anim.attackFlash > 0) {
+    energyGlow(ctx, size * 0.4, 0, size * 0.35 * anim.attackFlash, '#ffffff', anim.attackFlash * 0.7);
+  }
+}
+
+const BUILDING_WORLD: Record<string, number> = {
+  citadel: 190,
+  fabricator: 150,
+  uplink: 110,
+  capacitor: 76,
+  turret: 80,
+  spawner: 220
+};
+
 export function drawBuilding(
   ctx: CanvasRenderingContext2D,
   defId: string,
@@ -444,333 +730,150 @@ export function drawBuilding(
   construction: number,
   attackFlash: number
 ): void {
-  if (construction < 1) {
-    drawScaffold(ctx, defId, construction);
-    ctx.globalAlpha = 0.45 + construction * 0.4;
-  }
+  if (construction < 1) drawScaffold(ctx, defId, construction);
+  const size = BUILDING_WORLD[defId] ?? 80;
+  const alpha = construction < 1 ? 0.45 + construction * 0.4 : 1;
+  ctx.globalAlpha = alpha;
   switch (defId) {
     case 'citadel':
-      drawCitadel(ctx, time);
+      blit(ctx, bakeCitadel(), size);
+      energyGlow(ctx, 48, -66, 6, ORANGE, 0.5 + Math.sin(time * 5) * 0.4);
       break;
-    case 'fabricator':
-      drawFabricator(ctx, time);
+    case 'fabricator': {
+      blit(ctx, bakeFabricator(), size);
+      // smoke (dynamic)
+      const smoke = (time * 18) % 36;
+      ctx.globalAlpha = alpha * Math.max(0, 0.45 * (1 - smoke / 36));
+      energyGlow(ctx, -50, -60 - smoke, 9, 'rgba(150,160,180,0.8)', 0.5);
+      ctx.globalAlpha = alpha;
+      // crane swing
+      const swing = Math.sin(time * 0.8) * 0.3;
+      ctx.strokeStyle = shadeColor(ORANGE, 1);
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(-12, -12);
+      ctx.lineTo(-12 + Math.cos(swing) * 32, -12 - Math.sin(swing + 1.2) * 24);
+      ctx.stroke();
       break;
-    case 'uplink':
-      drawUplink(ctx, time);
+    }
+    case 'uplink': {
+      blit(ctx, bakeUplink(), size);
+      // floating dish rings (dynamic)
+      for (let i = 0; i < 3; i++) {
+        const r = 13 + i * 10 + Math.sin(time * 2 + i) * 2.5;
+        ctx.strokeStyle = `rgba(63, 210, 255, ${0.55 - i * 0.13})`;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.ellipse(0, -46, r, r * 0.35, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       break;
+    }
     case 'capacitor':
-      drawCapacitor(ctx, time);
+      blit(ctx, bakeCapacitor(), size);
+      energyGlow(ctx, 0, -6, 18, CYAN, 0.4 + Math.sin(time * 3) * 0.2);
       break;
-    case 'turret':
-      drawTurret(ctx, time, attackFlash);
+    case 'turret': {
+      blit(ctx, bakeTurretBase(), size);
+      const ang = time * 0.6;
+      ctx.save();
+      ctx.rotate(ang);
+      blit(ctx, bakeTurretHead(), 56);
+      ctx.restore();
+      if (attackFlash > 0) energyGlow(ctx, Math.cos(ang) * 28, Math.sin(ang) * 28, 14 * attackFlash, ORANGE, attackFlash);
       break;
-    case 'spawner':
-      drawSpawner(ctx, time);
+    }
+    case 'spawner': {
+      // tendrils (dynamic, under mound)
+      ctx.strokeStyle = shadeColor(CHITIN_DARK, 0.9);
+      ctx.lineWidth = 5;
+      for (let i = 0; i < 7; i++) {
+        const ang = (i / 7) * Math.PI * 2;
+        const wob = Math.sin(time * 2 + i * 1.3) * 12;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ang) * 36, Math.sin(ang) * 36);
+        ctx.quadraticCurveTo(
+          Math.cos(ang) * 72 + wob,
+          Math.sin(ang) * 72 + wob,
+          Math.cos(ang) * 102,
+          Math.sin(ang) * 102
+        );
+        ctx.stroke();
+      }
+      blit(ctx, bakeSpawner(), size);
+      // pulsing orifice glow
+      for (let i = 0; i < 5; i++) {
+        const ang = (i / 5) * Math.PI * 2 + 0.4;
+        energyGlow(ctx, Math.cos(ang) * 32, Math.sin(ang) * 32, 10, ACID, 0.3 + Math.sin(time * 3 + i) * 0.15);
+      }
       break;
+    }
   }
   ctx.globalAlpha = 1;
 }
 
 function drawScaffold(ctx: CanvasRenderingContext2D, defId: string, progress: number): void {
-  const size = defId === 'citadel' ? 80 : defId === 'fabricator' ? 64 : defId === 'uplink' ? 48 : defId === 'spawner' ? 96 : 32;
-  ctx.strokeStyle = 'rgba(63, 210, 255, 0.6)';
+  const size = (BUILDING_WORLD[defId] ?? 80) * 0.9;
+  ctx.strokeStyle = 'rgba(63, 210, 255, 0.65)';
   ctx.lineWidth = 1.5;
-  ctx.setLineDash([6, 4]);
+  ctx.setLineDash([7, 5]);
   ctx.strokeRect(-size / 2, -size / 2, size, size);
   ctx.setLineDash([]);
-  // progress arc
-  ctx.strokeStyle = WARDEN_CYAN;
+  ctx.strokeStyle = CYAN;
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.arc(0, -size / 2 - 10, 8, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
   ctx.stroke();
 }
 
-function drawCitadel(ctx: CanvasRenderingContext2D, t: number): void {
-  // hex foundation
-  ctx.fillStyle = WARDEN_DARK;
-  poly(ctx, [[70, 0], [35, 60], [-35, 60], [-70, 0], [-35, -60], [35, -60]]);
-  ctx.fill();
-  ctx.strokeStyle = WARDEN_CYAN;
-  ctx.lineWidth = 2;
-  ctx.globalAlpha *= 0.9;
-  ctx.stroke();
-  ctx.globalAlpha /= 0.9;
-  // server towers
-  const towers: [number, number, number][] = [[-25, -18, 34], [5, -25, 44], [22, 12, 28]];
-  for (const [x, y, h] of towers) {
-    ctx.fillStyle = WARDEN_PLATE;
-    ctx.fillRect(x - 10, y - h / 2, 20, h);
-    ctx.fillStyle = WARDEN_DARK;
-    for (let i = 0; i < 3; i++) ctx.fillRect(x - 7, y - h / 2 + 4 + i * 8, 14, 3);
-    glowDot(ctx, x, y - h / 2 - 3, 4, WARDEN_CYAN, 0.5 + Math.sin(t * 2 + x) * 0.3);
-  }
-  // central core
-  glowDot(ctx, 0, 8, 22, WARDEN_CYAN, 0.5 + Math.sin(t * 1.5) * 0.15);
-  ctx.fillStyle = WARDEN_LIGHT;
-  poly(ctx, [[14, 8], [7, 20], [-7, 20], [-14, 8], [-7, -4], [7, -4]]);
-  ctx.fill();
-  ctx.strokeStyle = WARDEN_DARK;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // antenna
-  ctx.strokeStyle = WARDEN_ORANGE;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(30, -30);
-  ctx.lineTo(38, -52);
-  ctx.stroke();
-  glowDot(ctx, 38, -52, 4, WARDEN_ORANGE, 0.6 + Math.sin(t * 5) * 0.4);
+export function drawNode(
+  ctx: CanvasRenderingContext2D,
+  nodeType: 'shards' | 'flux',
+  frac: number,
+  t: number
+): void {
+  if (nodeType === 'shards') drawShardNode(ctx, frac, t);
+  else drawFluxNode(ctx, frac, t);
 }
 
-function drawFabricator(ctx: CanvasRenderingContext2D, t: number): void {
-  // base
-  ctx.fillStyle = WARDEN_DARK;
-  poly(ctx, [[56, 20], [56, -20], [20, -34], [-56, -34], [-56, 34], [20, 34]]);
-  ctx.fill();
-  ctx.strokeStyle = '#101826';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  // roof plating
-  ctx.fillStyle = WARDEN_PLATE;
-  poly(ctx, [[50, 16], [50, -16], [18, -28], [-50, -28], [-50, 28], [18, 28]]);
-  ctx.fill();
-  // chimney
-  ctx.fillStyle = WARDEN_DARK;
-  ctx.fillRect(-44, -22, 12, 22);
-  const smoke = (t * 20) % 30;
-  glowDot(ctx, -38, -24 - smoke, 6, 'rgba(150,160,180,0.5)', 0.5 * (1 - smoke / 30));
-  // conveyor door
-  ctx.fillStyle = '#101826';
-  ctx.fillRect(28, -12, 20, 24);
-  ctx.strokeStyle = WARDEN_ORANGE;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(28, -12, 20, 24);
-  // crane arm
-  ctx.strokeStyle = WARDEN_ORANGE;
-  ctx.lineWidth = 3;
-  const swing = Math.sin(t * 0.8) * 0.3;
-  ctx.beginPath();
-  ctx.moveTo(-10, -10);
-  ctx.lineTo(-10 + Math.cos(swing) * 26, -10 - Math.sin(swing + 1.2) * 20);
-  ctx.stroke();
-  glowDot(ctx, 0, 0, 12, WARDEN_CYAN, 0.3);
-}
-
-function drawUplink(ctx: CanvasRenderingContext2D, t: number): void {
-  // base pad
-  ctx.fillStyle = WARDEN_DARK;
-  poly(ctx, [[40, 0], [20, 34], [-20, 34], [-40, 0], [-20, -34], [20, -34]]);
-  ctx.fill();
-  // mast
-  ctx.fillStyle = WARDEN_PLATE;
-  poly(ctx, [[6, 0], [3, -34], [-3, -34], [-6, 0]]);
-  ctx.fill();
-  // dish rings
-  for (let i = 0; i < 3; i++) {
-    const r = 10 + i * 8 + Math.sin(t * 2 + i) * 2;
-    ctx.strokeStyle = `rgba(63, 210, 255, ${0.5 - i * 0.12})`;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.ellipse(0, -34, r, r * 0.35, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  glowDot(ctx, 0, -38, 6, WARDEN_CYAN, 0.6 + Math.sin(t * 6) * 0.4);
-  // side fins
-  ctx.fillStyle = WARDEN_ORANGE;
-  poly(ctx, [[10, 10], [24, 20], [10, 22]]);
-  ctx.fill();
-  poly(ctx, [[-10, 10], [-24, 20], [-10, 22]]);
-  ctx.fill();
-}
-
-function drawCapacitor(ctx: CanvasRenderingContext2D, t: number): void {
-  // pylon base
-  ctx.fillStyle = WARDEN_DARK;
-  poly(ctx, [[26, 0], [13, 22], [-13, 22], [-26, 0], [-13, -22], [13, -22]]);
-  ctx.fill();
-  ctx.strokeStyle = WARDEN_CYAN;
-  ctx.lineWidth = 1;
-  ctx.globalAlpha *= 0.7;
-  ctx.stroke();
-  ctx.globalAlpha /= 0.7;
-  // crystal
-  const glow = 0.5 + Math.sin(t * 3) * 0.25;
-  ctx.fillStyle = WARDEN_LIGHT;
-  poly(ctx, [[0, -20], [9, -4], [5, 12], [-5, 12], [-9, -4]]);
-  ctx.fill();
-  ctx.strokeStyle = WARDEN_CYAN;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  glowDot(ctx, 0, -4, 16, WARDEN_CYAN, glow);
-  // ring
-  ctx.strokeStyle = WARDEN_ORANGE;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.ellipse(0, 14, 16, 5, 0, 0, Math.PI * 2);
-  ctx.stroke();
-}
-
-function drawTurret(ctx: CanvasRenderingContext2D, t: number, attackFlash: number): void {
-  // base plate
-  ctx.fillStyle = WARDEN_DARK;
-  poly(ctx, [[28, 0], [14, 24], [-14, 24], [-28, 0], [-14, -24], [14, -24]]);
-  ctx.fill();
-  ctx.strokeStyle = WARDEN_ORANGE;
-  ctx.lineWidth = 1.5;
-  ctx.globalAlpha *= 0.8;
-  ctx.stroke();
-  ctx.globalAlpha /= 0.8;
-  // rotating head (slow scan)
-  const ang = t * 0.6;
-  ctx.save();
-  ctx.rotate(ang);
-  ctx.fillStyle = WARDEN_PLATE;
-  circle(ctx, 0, 0, 12);
-  ctx.fill();
-  ctx.strokeStyle = '#101826';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // twin barrels
-  ctx.strokeStyle = WARDEN_DARK;
-  ctx.lineWidth = 3.5;
-  ctx.beginPath();
-  ctx.moveTo(6, 4);
-  ctx.lineTo(22, 4);
-  ctx.moveTo(6, -4);
-  ctx.lineTo(22, -4);
-  ctx.stroke();
-  ctx.strokeStyle = WARDEN_ORANGE;
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(10, 4);
-  ctx.lineTo(22, 4);
-  ctx.moveTo(10, -4);
-  ctx.lineTo(22, -4);
-  ctx.stroke();
-  ctx.restore();
-  glowDot(ctx, 0, 0, 6, WARDEN_ORANGE, 0.5 + Math.sin(t * 4) * 0.2);
-  if (attackFlash > 0) glowDot(ctx, Math.cos(ang) * 22, Math.sin(ang) * 22, 10 * attackFlash, WARDEN_ORANGE, attackFlash);
-}
-
-function drawSpawner(ctx: CanvasRenderingContext2D, t: number): void {
-  // tendrils
-  ctx.strokeStyle = PHAGE_DARK;
-  ctx.lineWidth = 4;
-  for (let i = 0; i < 7; i++) {
-    const ang = (i / 7) * Math.PI * 2;
-    const wob = Math.sin(t * 2 + i * 1.3) * 10;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(ang) * 30, Math.sin(ang) * 30);
-    ctx.quadraticCurveTo(
-      Math.cos(ang) * 60 + wob,
-      Math.sin(ang) * 60 + wob,
-      Math.cos(ang) * 85,
-      Math.sin(ang) * 85
-    );
-    ctx.stroke();
-  }
-  // mound
-  ctx.fillStyle = PHAGE_CHITIN;
-  circle(ctx, 0, 0, 48);
-  ctx.fill();
-  ctx.strokeStyle = PHAGE_MAGENTA;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  // orifices
-  for (let i = 0; i < 5; i++) {
-    const ang = (i / 5) * Math.PI * 2 + 0.4;
-    const x = Math.cos(ang) * 26;
-    const y = Math.sin(ang) * 26;
-    ctx.fillStyle = PHAGE_DARK;
-    circle(ctx, x, y, 8 + Math.sin(t * 3 + i) * 2);
-    ctx.fill();
-    glowDot(ctx, x, y, 9, PHAGE_ACID, 0.35 + Math.sin(t * 3 + i) * 0.15);
-  }
-  glowDot(ctx, 0, 0, 20, PHAGE_MAGENTA, 0.4 + Math.sin(t * 1.8) * 0.15);
-}
-
-// ============ RESOURCE NODES ============
-export function drawNode(ctx: CanvasRenderingContext2D, nodeType: 'shards' | 'flux', frac: number, t: number): void {
-  if (nodeType === 'shards') {
-    // data shard cluster: cyan crystal facets
-    const shards: [number, number, number, number][] = [
-      [0, 0, 10, 1],
-      [-9, 6, 7, 0.7],
-      [8, 7, 6, 0.5]
-    ];
-    for (const [x, y, h, s] of shards) {
-      const hh = h * (0.5 + frac * 0.5);
-      ctx.fillStyle = '#1d5f7d';
-      poly(ctx, [[x, y - hh * s * 2], [x + 5 * s, y], [x, y + 4 * s], [x - 5 * s, y]]);
-      ctx.fill();
-      ctx.strokeStyle = WARDEN_CYAN;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-    glowDot(ctx, 0, 0, 14, WARDEN_CYAN, 0.25 + Math.sin(t * 2) * 0.1 + frac * 0.1);
-  } else {
-    // flux vent: orange energy geyser
-    ctx.fillStyle = '#4d3421';
-    poly(ctx, [[12, 4], [6, 10], [-6, 10], [-12, 4], [-6, -2], [6, -2]]);
-    ctx.fill();
-    ctx.strokeStyle = WARDEN_ORANGE;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    const jet = 0.4 + Math.sin(t * 5) * 0.2 + frac * 0.3;
-    glowDot(ctx, 0, -6, 16, WARDEN_ORANGE, jet);
-    ctx.strokeStyle = `rgba(255, 156, 65, ${jet})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, -2);
-    ctx.lineTo(Math.sin(t * 7) * 3, -16 - frac * 6);
-    ctx.stroke();
-  }
-}
-
-// ============ PROJECTILES ============
-export function drawProjectile(ctx: CanvasRenderingContext2D, defId: string, angle: number): void {
-  ctx.rotate(angle);
+export function drawProjectile(ctx: CanvasRenderingContext2D, defId: string, _angle: number): void {
   switch (defId) {
     case 'rail':
-      ctx.strokeStyle = WARDEN_CYAN;
+      ctx.strokeStyle = CYAN;
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(-8, 0);
-      ctx.lineTo(4, 0);
+      ctx.moveTo(-9, 0);
+      ctx.lineTo(5, 0);
       ctx.stroke();
-      glowDot(ctx, 4, 0, 4, WARDEN_CYAN, 0.9);
+      energyGlow(ctx, 5, 0, 5, CYAN, 0.9);
       break;
     case 'arc':
       ctx.strokeStyle = '#9be7ff';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(-8, 0);
-      ctx.lineTo(-2, -3);
-      ctx.lineTo(3, 3);
-      ctx.lineTo(8, 0);
+      ctx.moveTo(-9, 0);
+      ctx.lineTo(-2, -3.5);
+      ctx.lineTo(4, 3.5);
+      ctx.lineTo(10, 0);
       ctx.stroke();
-      glowDot(ctx, 8, 0, 5, WARDEN_CYAN, 0.8);
+      energyGlow(ctx, 10, 0, 6, CYAN, 0.8);
       break;
     case 'goo':
-      ctx.fillStyle = PHAGE_ACID;
-      circle(ctx, 0, 0, 4);
-      ctx.fill();
-      glowDot(ctx, 0, 0, 7, PHAGE_ACID, 0.6);
+      circ(ctx, 0, 0, 4.5);
+      materialFill(ctx, -4, -4, 4, 4, ACID, 'flesh', 320);
+      energyGlow(ctx, 0, 0, 8, ACID, 0.6);
       break;
     case 'flame':
-      ctx.fillStyle = WARDEN_ORANGE;
-      poly(ctx, [[8, 0], [0, 4], [-6, 0], [0, -4]]);
-      ctx.fill();
-      glowDot(ctx, 0, 0, 8, WARDEN_ORANGE, 0.7);
+      poly(ctx, [[10, 0], [0, 5], [-7, 0], [0, -5]]);
+      materialFill(ctx, -7, -5, 10, 5, ORANGE, 'grain', 321);
+      energyGlow(ctx, 0, 0, 9, ORANGE, 0.7);
       break;
     case 'corebeam':
-      ctx.fillStyle = PHAGE_MAGENTA;
-      circle(ctx, 0, 0, 7);
-      ctx.fill();
-      glowDot(ctx, 0, 0, 14, PHAGE_MAGENTA, 0.8);
+      circ(ctx, 0, 0, 8);
+      materialFill(ctx, -8, -8, 8, 8, MAGENTA, 'flesh', 322);
+      energyGlow(ctx, 0, 0, 15, MAGENTA, 0.8);
       break;
     default:
-      glowDot(ctx, 0, 0, 4, '#ffffff', 0.8);
+      energyGlow(ctx, 0, 0, 4, '#ffffff', 0.8);
   }
 }

@@ -8,7 +8,8 @@ AI Defense RTS（代码、程序化美术、程序化音效）为私有未授权
 
 | 素材 | 来源 | 说明 |
 | --- | --- | --- |
-| 全部单位/建筑/资源造型 | 原创程序化矢量绘制（`src/render/sprites.ts`） | 运行时代码生成，无图像文件 |
+| 材质纹理（5 张） | 原创程序生成并烘焙为 PNG（`public/assets/materials/`，`npm run bake:materials` 可再生） | 独立材质文件，可由美术替换 |
+| 全部单位/建筑/资源造型 | 原创多层材质渲染（`src/render/materials.ts` + `sprites.ts`） | 运行时组合烘焙，无外部图像 |
 | 地图地形/电路/感染区 | 原创程序化绘制（`src/render/terrain.ts`） | 确定性伪随机装饰 |
 | UI 图标 | 原创 SVG（`src/ui/Icon.tsx`） | 手工编写 |
 | 全部音效 | WebAudio 振荡器/噪声实时合成（`src/audio/audio.ts`） | 无音频文件 |

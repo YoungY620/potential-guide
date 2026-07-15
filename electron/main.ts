@@ -50,6 +50,32 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // Bake mode: export procedural material textures as PNG files, then quit.
+  if (process.env.BAKE_MATERIALS) {
+    const win = new BrowserWindow({ show: false, width: 800, height: 600 });
+    const outDir = process.env.BAKE_MATERIALS;
+    win.webContents.on('did-finish-load', () => {
+      void win.webContents
+        .executeJavaScript('window.__exportMaterialTextures && window.__exportMaterialTextures()')
+        .then((textures: Record<string, string> | undefined) => {
+          if (textures) {
+            fs.mkdirSync(outDir, { recursive: true });
+            for (const [kind, dataUrl] of Object.entries(textures)) {
+              const b64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+              fs.writeFileSync(path.join(outDir, `${kind}.png`), Buffer.from(b64, 'base64'));
+            }
+            console.log('baked materials:', Object.keys(textures).join(','));
+          }
+          app.quit();
+        })
+        .catch((err) => {
+          console.error(err);
+          app.quit();
+        });
+    });
+    void win.loadFile(path.join(__dirname, '../dist/index.html'));
+    return;
+  }
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

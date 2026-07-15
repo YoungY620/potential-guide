@@ -10,6 +10,7 @@
     "build": "npm run build:web && npm run build:electron",
     "build:web": "vite build",
     "build:electron": "node scripts/build-electron.mjs",
+    "bake:materials": "npm run build && BAKE_MATERIALS=public/assets/materials npx electron .",
     "dist": "npm run build && electron-builder --mac",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
