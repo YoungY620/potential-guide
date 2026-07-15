@@ -59,7 +59,7 @@ jobs:
 
             ## 校验
 
-            每个 zip 附带 `.sha256` 校验文件：`shasum -a 256 -c "AI Defense RTS-<平台>.zip.sha256"`。
+            每个 zip 附带 `.sha256` 校验文件：`shasum -a 256 -c "AI-Defense-RTS-<平台>.zip.sha256"`。
 
             ## 说明
 
@@ -112,7 +112,7 @@ jobs:
 
             ## 校验
 
-            每个 zip 附带 `.sha256` 校验文件：`shasum -a 256 -c "AI Defense RTS-<平台>.zip.sha256"`。
+            每个 zip 附带 `.sha256` 校验文件：`shasum -a 256 -c "AI-Defense-RTS-<平台>.zip.sha256"`。
 
             ## 说明
 
