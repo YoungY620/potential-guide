@@ -67,7 +67,7 @@ git push origin v0.1.0
 ```
 
 工作流会先跑类型检查与全部测试，然后在 macOS（arm64）与 Windows 双平台打包，把
-`AI Defense RTS-macOS-arm64.zip` 与 `AI Defense RTS-windows-x64.zip`（含 SHA256 校验文件）
+`AI-Defense-RTS-macOS-arm64.zip` 与 `AI-Defense-RTS-windows-x64.zip`（含 SHA256 校验文件）
 发布到对应的 GitHub Release。
 
 ## 目录结构

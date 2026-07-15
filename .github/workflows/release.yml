@@ -39,8 +39,8 @@ jobs:
       - name: Zip app
         run: |
           cd release
-          ditto -c -k --keepParent "mac-arm64/AI Defense RTS.app" "AI Defense RTS-macOS-arm64.zip"
-          shasum -a 256 "AI Defense RTS-macOS-arm64.zip" > "AI Defense RTS-macOS-arm64.zip.sha256"
+          ditto -c -k --keepParent "mac-arm64/AI Defense RTS.app" "AI-Defense-RTS-macOS-arm64.zip"
+          shasum -a 256 "AI-Defense-RTS-macOS-arm64.zip" > "AI-Defense-RTS-macOS-arm64.zip.sha256"
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -51,10 +51,10 @@ jobs:
 
             ## 安装与启动
 
-            **macOS（Apple Silicon）**：下载 `AI Defense RTS-macOS-arm64.zip`，解压后双击 `AI Defense RTS.app`。
+            **macOS（Apple Silicon）**：下载 `AI-Defense-RTS-macOS-arm64.zip`，解压后双击 `AI Defense RTS.app`。
             首次打开如被 Gatekeeper 拦截：右键 → 打开，或「系统设置 → 隐私与安全性」中允许。
 
-            **Windows（x64）**：下载 `AI Defense RTS-windows-x64.zip`，解压后双击 `AI Defense RTS.exe`。
+            **Windows（x64）**：下载 `AI-Defense-RTS-windows-x64.zip`，解压后双击 `AI Defense RTS.exe`。
             如遇到 SmartScreen：「更多信息」→「仍要运行」。
 
             ## 校验
@@ -67,8 +67,8 @@ jobs:
             - 教学 + 完整对局（10–15 分钟）；设置与快捷键改绑重启后保留
             - 源码、设计与 QA 报告见仓库 README 与 `docs/`
           files: |
-            release/AI Defense RTS-macOS-arm64.zip
-            release/AI Defense RTS-macOS-arm64.zip.sha256
+            release/AI-Defense-RTS-macOS-arm64.zip
+            release/AI-Defense-RTS-macOS-arm64.zip.sha256
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -92,8 +92,8 @@ jobs:
       - name: Zip
         shell: pwsh
         run: |
-          Compress-Archive -Path "release/win-unpacked" -DestinationPath "release/AI Defense RTS-windows-x64.zip" -Force
-          (Get-FileHash "release/AI Defense RTS-windows-x64.zip" -Algorithm SHA256).Hash | Out-File "release/AI Defense RTS-windows-x64.zip.sha256"
+          Compress-Archive -Path "release/win-unpacked" -DestinationPath "release/AI-Defense-RTS-windows-x64.zip" -Force
+          (Get-FileHash "release/AI-Defense-RTS-windows-x64.zip" -Algorithm SHA256).Hash | Out-File "release/AI-Defense-RTS-windows-x64.zip.sha256"
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -104,10 +104,10 @@ jobs:
 
             ## 安装与启动
 
-            **macOS（Apple Silicon）**：下载 `AI Defense RTS-macOS-arm64.zip`，解压后双击 `AI Defense RTS.app`。
+            **macOS（Apple Silicon）**：下载 `AI-Defense-RTS-macOS-arm64.zip`，解压后双击 `AI Defense RTS.app`。
             首次打开如被 Gatekeeper 拦截：右键 → 打开，或「系统设置 → 隐私与安全性」中允许。
 
-            **Windows（x64）**：下载 `AI Defense RTS-windows-x64.zip`，解压后双击 `AI Defense RTS.exe`。
+            **Windows（x64）**：下载 `AI-Defense-RTS-windows-x64.zip`，解压后双击 `AI Defense RTS.exe`。
             如遇到 SmartScreen：「更多信息」→「仍要运行」。
 
             ## 校验
@@ -120,8 +120,8 @@ jobs:
             - 教学 + 完整对局（10–15 分钟）；设置与快捷键改绑重启后保留
             - 源码、设计与 QA 报告见仓库 README 与 `docs/`
           files: |
-            release/AI Defense RTS-windows-x64.zip
-            release/AI Defense RTS-windows-x64.zip.sha256
+            release/AI-Defense-RTS-windows-x64.zip
+            release/AI-Defense-RTS-windows-x64.zip.sha256
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
